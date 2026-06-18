@@ -3,20 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>埋点统计系统 - IP 归属地分析</title>
+  <title>埋点统计系统 - IP 归属地与峰值时段分析</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; padding: 20px; }
-    .container { max-width: 1200px; margin: 0 auto; }
+    .container { max-width: 1400px; margin: 0 auto; }
     h1 { color: #1a1a2e; margin-bottom: 20px; text-align: center; }
     .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
     .card h2 { color: #16213e; margin-bottom: 16px; font-size: 18px; border-bottom: 2px solid #0f3460; padding-bottom: 8px; }
+    .card h3 { color: #0f3460; margin: 16px 0 12px 0; font-size: 15px; }
     .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
     .summary-item { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }
     .summary-item .label { font-size: 14px; opacity: 0.9; }
     .summary-item .value { font-size: 32px; font-weight: bold; margin-top: 8px; }
     .btn { background: #0f3460; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
     .btn:hover { background: #16213e; }
+    .btn-success { background: #27ae60; }
+    .btn-success:hover { background: #219a52; }
     .btn-danger { background: #e74c3c; }
     .btn-danger:hover { background: #c0392b; }
     .btn-group { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -37,11 +40,48 @@
     .log-area { background: #1a1a2e; color: #00ff00; padding: 16px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; margin-top: 16px; }
     .log-entry { margin-bottom: 4px; }
     .log-time { color: #888; }
+
+    .hourly-chart { display: flex; align-items: flex-end; gap: 4px; height: 200px; margin: 20px 0; padding: 10px; background: #f8f9fa; border-radius: 8px; }
+    .hour-bar { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    .hour-bar-fill { width: 100%; background: linear-gradient(180deg, #667eea, #764ba2); border-radius: 4px 4px 0 0; transition: height 0.3s; min-height: 4px; }
+    .hour-bar-label { font-size: 10px; color: #666; margin-top: 4px; }
+    .hour-bar-fill.peak { background: linear-gradient(180deg, #f093fb, #f5576c); }
+
+    .peak-periods { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 16px 0; }
+    .period-card { padding: 12px; border-radius: 8px; text-align: center; background: #f0f2f5; }
+    .period-card.peak { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); }
+    .period-card .period-name { font-weight: 600; color: #1a1a2e; }
+    .period-card .period-count { font-size: 20px; font-weight: bold; color: #0f3460; margin: 4px 0; }
+    .period-card .period-percent { font-size: 12px; color: #666; }
+
+    .province-peak-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fafafa; }
+    .province-peak-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .province-peak-name { font-size: 16px; font-weight: 600; color: #1a1a2e; }
+    .province-peak-total { font-size: 14px; color: #0f3460; font-weight: 500; }
+    .province-peak-hours { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .peak-hour-badge { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .suggestion-list { list-style: none; padding: 0; }
+    .suggestion-list li { padding: 8px 0; padding-left: 24px; position: relative; color: #555; font-size: 13px; border-bottom: 1px solid #eee; }
+    .suggestion-list li:before { content: '💡'; position: absolute; left: 0; }
+    .suggestion-list li:last-child { border-bottom: none; }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; }
+    .tab { padding: 10px 20px; cursor: pointer; border: none; background: none; font-size: 14px; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.3s; }
+    .tab.active { color: #0f3460; border-bottom-color: #0f3460; font-weight: 600; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .global-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .global-stat { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); padding: 16px; border-radius: 8px; text-align: center; }
+    .global-stat .label { font-size: 12px; color: #555; }
+    .global-stat .value { font-size: 24px; font-weight: bold; color: #1a1a2e; margin-top: 4px; }
+
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>📊 埋点统计系统 - IP 归属地实时分析</h1>
+    <h1>📊 埋点统计系统 - IP 归属地与峰值时段分析</h1>
 
     <div class="card">
       <h2>📡 当前访客信息</h2>
@@ -50,6 +90,7 @@
         <button class="btn" onclick="sendTrack()">发送埋点 (POST)</button>
         <button class="btn" onclick="sendPixel()">发送埋点 (像素图)</button>
         <button class="btn" onclick="sendMockIps()">模拟多省份访问</button>
+        <button class="btn btn-success" onclick="generatePeakData()">生成时段测试数据</button>
         <button class="btn btn-danger" onclick="clearStats()">清空统计</button>
       </div>
     </div>
@@ -72,6 +113,72 @@
         <div class="summary-item">
           <div class="label">最后更新</div>
           <div class="value" style="font-size: 14px;" id="lastUpdated">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⏰ 峰值时段分析</h2>
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('global')">全局分析</button>
+        <button class="tab" onclick="switchTab('province')">分省分析</button>
+        <button class="tab" onclick="switchTab('hourly')">时段分布</button>
+      </div>
+
+      <div id="tab-global" class="tab-content active">
+        <div id="globalPeakContent">
+          <div class="global-stats">
+            <div class="global-stat">
+              <div class="label">分析时段数</div>
+              <div class="value" id="periodCount">0</div>
+            </div>
+            <div class="global-stat">
+              <div class="label">最高峰时段</div>
+              <div class="value" id="topPeriod">-</div>
+            </div>
+            <div class="global-stat">
+              <div class="label">最活跃省份</div>
+              <div class="value" id="topProvince">-</div>
+            </div>
+            <div class="global-stat">
+              <div class="label">日期范围</div>
+              <div class="value" style="font-size: 12px;" id="dateRange">-</div>
+            </div>
+          </div>
+
+          <h3>🌍 全局 24 小时访客分布</h3>
+          <div class="hourly-chart" id="globalHourlyChart"></div>
+
+          <h3>📊 时段分布占比</h3>
+          <div class="peak-periods" id="globalPeriods"></div>
+
+          <h3>🏆 高峰时段 TOP 5</h3>
+          <table id="peakHoursTable">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>时段</th>
+                <th>访客数</th>
+                <th>占比</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="4" style="text-align: center; color: #999;">暂无数据</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-province" class="tab-content">
+        <div id="provincePeakContent">
+          <p style="color: #666; margin-bottom: 16px;">以下是各省份的访客高峰时段分析，包含智能运营建议：</p>
+          <div id="provincePeakList"></div>
+        </div>
+      </div>
+
+      <div id="tab-hourly" class="tab-content">
+        <div id="hourlyDetailContent">
+          <div id="hourlyDetailList"></div>
         </div>
       </div>
     </div>
@@ -118,6 +225,13 @@
       logArea.scrollTop = logArea.scrollHeight;
     }
 
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('tab-' + tabName).classList.add('active');
+    }
+
     async function fetchHealth() {
       try {
         const res = await fetch('/api/health');
@@ -147,7 +261,7 @@
         const data = await res.json();
         if (data.success) {
           addLog(`埋点上报成功 - IP: ${data.data.ip}, 省份: ${data.data.location.province}`, 'success');
-          fetchStats();
+          fetchAllData();
         }
       } catch (err) {
         addLog('埋点上报失败: ' + err.message, 'error');
@@ -159,11 +273,11 @@
       img.src = `/api/track?event=page_view&page=${encodeURIComponent(window.location.pathname)}`;
       img.onload = () => {
         addLog('像素图埋点上报成功', 'success');
-        fetchStats();
+        fetchAllData();
       };
       img.onerror = () => {
         addLog('像素图埋点上报成功（已接收）', 'success');
-        fetchStats();
+        fetchAllData();
       };
     }
 
@@ -212,7 +326,85 @@
       }
 
       addLog('模拟访问完成', 'success');
+      fetchAllData();
+    }
+
+    async function generatePeakData() {
+      if (!confirm('将生成各省份不同时段的测试数据，用于峰值分析。确定继续？')) return;
+      addLog('开始生成峰值时段测试数据...', 'info');
+      try {
+        const res = await fetch('/test/generate-peak-data.js');
+        if (res.ok) {
+          addLog('请在终端运行: node test/generate-peak-data.js', 'info');
+          addLog('或点击按钮自动生成...', 'info');
+          await autoGeneratePeakData();
+        } else {
+          await autoGeneratePeakData();
+        }
+      } catch (err) {
+        await autoGeneratePeakData();
+      }
+    }
+
+    async function autoGeneratePeakData() {
+      const provinceIps = [
+        { province: '广东省', ip: '120.24.78.68', peakHours: [10, 14, 20, 21, 22] },
+        { province: '浙江省', ip: '223.5.5.5', peakHours: [9, 10, 11, 20, 21] },
+        { province: '江苏省', ip: '114.114.114.114', peakHours: [10, 14, 15, 21, 22] },
+        { province: '北京', ip: '119.29.29.29', peakHours: [8, 9, 12, 19, 20] },
+        { province: '四川省', ip: '117.25.128.110', peakHours: [11, 14, 15, 22, 23] },
+        { province: '山东省', ip: '116.248.152.131', peakHours: [8, 9, 12, 20, 21] },
+      ];
+
+      function getTimestampForHour(hour) {
+        const date = new Date();
+        date.setHours(hour, Math.floor(Math.random() * 60), Math.floor(Math.random() * 60), 0);
+        return date.getTime();
+      }
+
+      function weightedRandomHour(peakHours) {
+        const allHours = [];
+        for (let h = 0; h < 24; h++) {
+          const weight = peakHours.includes(h) ? 5 : 1;
+          for (let w = 0; w < weight; w++) {
+            allHours.push(h);
+          }
+        }
+        return allHours[Math.floor(Math.random() * allHours.length)];
+      }
+
+      const totalPerProvince = 30;
+      let success = 0;
+
+      for (const p of provinceIps) {
+        addLog(`生成 ${p.province} 数据...`);
+        const promises = [];
+        for (let i = 0; i < totalPerProvince; i++) {
+          const hour = weightedRandomHour(p.peakHours);
+          const timestamp = getTimestampForHour(hour);
+          promises.push(
+            fetch('/api/track', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Forwarded-For': p.ip,
+                'X-Test-Timestamp': timestamp.toString(),
+              },
+              body: JSON.stringify({ event: 'page_view' })
+            }).then(() => { success++; }).catch(() => {})
+          );
+        }
+        await Promise.all(promises);
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      addLog(`测试数据生成完成，共 ${success} 条记录`, 'success');
+      fetchAllData();
+    }
+
+    async function fetchAllData() {
       fetchStats();
+      fetchPeakAnalysis();
     }
 
     async function fetchStats() {
@@ -271,6 +463,136 @@
       }
     }
 
+    async function fetchPeakAnalysis() {
+      try {
+        const res = await fetch('/api/stats/peak-analysis');
+        const data = await res.json();
+
+        if (!data.success || !data.data || data.data.global.totalVisits === 0) {
+          document.getElementById('globalHourlyChart').innerHTML = '<p style="color: #999; text-align: center; width: 100%; padding: 40px;">暂无时段数据，请先生成测试数据或发送埋点</p>';
+          document.getElementById('provincePeakList').innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">暂无数据</p>';
+          document.getElementById('hourlyDetailList').innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">暂无数据</p>';
+          return;
+        }
+
+        const global = data.data.global;
+        const byProvince = data.data.byProvince;
+
+        document.getElementById('periodCount').textContent = global.peakPeriods.length;
+        document.getElementById('topPeriod').textContent = global.peakPeriods[0]?.period || '-';
+        document.getElementById('topProvince').textContent = byProvince[0]?.province || '-';
+        document.getElementById('dateRange').textContent = data.data.dateRange.join(', ') || '-';
+
+        const maxCount = Math.max(...global.hourlyDistribution.map(h => h.count), 1);
+        const peakHours = global.peakHours.map(h => h.hour);
+        let chartHtml = '';
+        for (let h = 0; h < 24; h++) {
+          const hourData = global.hourlyDistribution.find(d => d.hour === h);
+          const count = hourData?.count || 0;
+          const height = maxCount > 0 ? (count / maxCount) * 100 : 0;
+          const isPeak = peakHours.includes(h);
+          chartHtml += `
+            <div class="hour-bar" title="${hourData?.hourLabel}: ${count}">
+              <div class="hour-bar-fill ${isPeak ? 'peak' : ''}" style="height: ${Math.max(height, 2)}%"></div>
+              <div class="hour-bar-label">${String(h).padStart(2, '0')}</div>
+            </div>
+          `;
+        }
+        document.getElementById('globalHourlyChart').innerHTML = chartHtml;
+
+        let periodsHtml = '';
+        for (let i = 0; i < global.peakPeriods.length; i++) {
+          const p = global.peakPeriods[i];
+          periodsHtml += `
+            <div class="period-card ${i === 0 ? 'peak' : ''}">
+              <div class="period-name">${p.period}</div>
+              <div class="period-count">${p.count}</div>
+              <div class="period-percent">${p.percentage}</div>
+            </div>
+          `;
+        }
+        document.getElementById('globalPeriods').innerHTML = periodsHtml;
+
+        if (global.peakHours.length > 0) {
+          let peakHtml = '';
+          global.peakHours.forEach((h, idx) => {
+            peakHtml += `
+              <tr>
+                <td><span class="status success">TOP ${idx + 1}</span></td>
+                <td>${h.hourLabel}</td>
+                <td>${h.count}</td>
+                <td>${h.percentage}</td>
+              </tr>
+            `;
+          });
+          document.querySelector('#peakHoursTable tbody').innerHTML = peakHtml;
+        }
+
+        let provinceHtml = '';
+        for (const p of byProvince) {
+          const peakHourBadges = p.peakHours.map(h => `<span class="peak-hour-badge">${h.hourLabel} · ${h.count}次</span>`).join('');
+          const suggestions = p.suggestion.map(s => `<li>${s}</li>`).join('');
+          provinceHtml += `
+            <div class="province-peak-card">
+              <div class="province-peak-header">
+                <span class="province-peak-name">🏙️ ${p.province}</span>
+                <span class="province-peak-total">总访客: ${p.total} · 平均: ${p.avgPerHour}/小时</span>
+              </div>
+              <div class="province-peak-hours">
+                ${peakHourBadges}
+              </div>
+              <h3 style="margin: 8px 0;">📊 时段分布</h3>
+              <div class="peak-periods">
+                ${p.peakPeriods.map(pp => `
+                  <div class="period-card ${pp.period === p.peakPeriods[0].period ? 'peak' : ''}">
+                    <div class="period-name">${pp.period}</div>
+                    <div class="period-count">${pp.count}</div>
+                    <div class="period-percent">${pp.percentage}</div>
+                  </div>
+                `).join('')}
+              </div>
+              <h3 style="margin: 12px 0 8px 0;">💡 运营建议</h3>
+              <ul class="suggestion-list">
+                ${suggestions}
+              </ul>
+            </div>
+          `;
+        }
+        document.getElementById('provincePeakList').innerHTML = provinceHtml;
+
+        const hourlyRes = await fetch('/api/stats/hourly');
+        const hourlyData = await hourlyRes.json();
+        if (hourlyData.success && hourlyData.data.length > 0) {
+          let hourlyHtml = '<table><thead><tr><th>日期</th><th>省份</th><th>时段分布</th><th>总计</th></tr></thead><tbody>';
+          for (const d of hourlyData.data.slice(0, 10)) {
+            const maxHourCount = Math.max(...d.hourly.map(h => h.count), 1);
+            const hourBars = d.hourly.map(h => {
+              const width = (h.count / maxHourCount) * 100;
+              return `<div title="${h.hourLabel}: ${h.count}" style="display:inline-block;width:${Math.max(width, 2)}%;height:20px;background:linear-gradient(180deg,#667eea,#764ba2);margin-right:1px;vertical-align:bottom;"></div>`;
+            }).join('');
+            hourlyHtml += `
+              <tr>
+                <td>${d.date}</td>
+                <td><strong>${d.province}</strong></td>
+                <td style="min-width:300px;">
+                  <div style="display:flex;align-items:center;gap:4px;">
+                    ${hourBars}
+                  </div>
+                </td>
+                <td>${d.total}</td>
+              </tr>
+            `;
+          }
+          hourlyHtml += '</tbody></table>';
+          document.getElementById('hourlyDetailList').innerHTML = hourlyHtml;
+        } else {
+          document.getElementById('hourlyDetailList').innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">暂无数据</p>';
+        }
+      } catch (err) {
+        addLog('获取峰值分析数据失败: ' + err.message, 'error');
+      }
+    }
+
     async function clearStats() {
       if (!confirm('确定要清空所有统计数据吗？')) return;
       try {
@@ -278,17 +600,17 @@
         const data = await res.json();
         if (data.success) {
           addLog('统计数据已清空', 'success');
-          fetchStats();
+          fetchAllData();
         }
       } catch (err) {
         addLog('清空失败: ' + err.message, 'error');
       }
     }
 
-    setInterval(fetchStats, 3000);
+    setInterval(fetchAllData, 5000);
     fetchHealth();
-    fetchStats();
-    addLog('页面加载完成，自动刷新已启动 (3秒)');
+    fetchAllData();
+    addLog('页面加载完成，自动刷新已启动 (5秒)');
   </script>
 </body>
 </html>

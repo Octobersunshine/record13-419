@@ -6,12 +6,17 @@ const statsPool = require('../statsPool');
 router.post('/track', async (req, res) => {
   try {
     const ip = req.clientIp;
-    const { event, page, referrer, userAgent, extra } = req.body || {};
+    const { event, page, referrer, userAgent, extra, _timestamp } = req.body || {};
 
     const location = parseIp(ip);
     const province = location.province;
 
-    statsPool.recordVisitSync(ip, location);
+    const testTimestamp = req.headers['x-test-timestamp'] || _timestamp;
+    if (testTimestamp) {
+      statsPool.recordVisitWithTime(ip, location, parseInt(testTimestamp, 10));
+    } else {
+      statsPool.recordVisitSync(ip, location);
+    }
 
     res.json({
       success: true,
@@ -34,12 +39,17 @@ router.post('/track', async (req, res) => {
 router.get('/track', (req, res) => {
   try {
     const ip = req.clientIp;
-    const { event, page, referrer } = req.query || {};
+    const { event, page, referrer, _timestamp } = req.query || {};
 
     const location = parseIp(ip);
     const province = location.province;
 
-    statsPool.recordVisitSync(ip, location);
+    const testTimestamp = req.headers['x-test-timestamp'] || _timestamp;
+    if (testTimestamp) {
+      statsPool.recordVisitWithTime(ip, location, parseInt(testTimestamp, 10));
+    } else {
+      statsPool.recordVisitSync(ip, location);
+    }
 
     const img = Buffer.from(
       'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
