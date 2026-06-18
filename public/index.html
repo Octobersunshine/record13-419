@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>埋点统计系统 - IP 归属地分析</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: #1a1a2e; margin-bottom: 20px; text-align: center; }
+    .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    .card h2 { color: #16213e; margin-bottom: 16px; font-size: 18px; border-bottom: 2px solid #0f3460; padding-bottom: 8px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .summary-item { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center; }
+    .summary-item .label { font-size: 14px; opacity: 0.9; }
+    .summary-item .value { font-size: 32px; font-weight: bold; margin-top: 8px; }
+    .btn { background: #0f3460; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
+    .btn:hover { background: #16213e; }
+    .btn-danger { background: #e74c3c; }
+    .btn-danger:hover { background: #c0392b; }
+    .btn-group { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+    th { background: #f8f9fa; color: #1a1a2e; font-weight: 600; }
+    tr:hover { background: #f8f9fa; }
+    .progress-bar { background: #e9ecef; border-radius: 4px; height: 8px; overflow: hidden; }
+    .progress-fill { background: linear-gradient(90deg, #667eea, #764ba2); height: 100%; transition: width 0.3s; }
+    .province-row { display: flex; align-items: center; gap: 12px; }
+    .province-name { min-width: 100px; font-weight: 500; }
+    .province-count { min-width: 60px; color: #666; font-size: 14px; }
+    .province-percent { min-width: 60px; color: #0f3460; font-weight: 600; font-size: 14px; }
+    .ip-info { background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-family: monospace; }
+    .status { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .log-area { background: #1a1a2e; color: #00ff00; padding: 16px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; margin-top: 16px; }
+    .log-entry { margin-bottom: 4px; }
+    .log-time { color: #888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 埋点统计系统 - IP 归属地实时分析</h1>
+
+    <div class="card">
+      <h2>📡 当前访客信息</h2>
+      <div class="ip-info" id="ipInfo">加载中...</div>
+      <div class="btn-group">
+        <button class="btn" onclick="sendTrack()">发送埋点 (POST)</button>
+        <button class="btn" onclick="sendPixel()">发送埋点 (像素图)</button>
+        <button class="btn" onclick="sendMockIps()">模拟多省份访问</button>
+        <button class="btn btn-danger" onclick="clearStats()">清空统计</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📈 统计摘要</h2>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <div class="label">总访问量</div>
+          <div class="value" id="totalVisits">0</div>
+        </div>
+        <div class="summary-item">
+          <div class="label">独立 IP</div>
+          <div class="value" id="uniqueIps">0</div>
+        </div>
+        <div class="summary-item">
+          <div class="label">覆盖省份</div>
+          <div class="value" id="provinceCount">0</div>
+        </div>
+        <div class="summary-item">
+          <div class="label">最后更新</div>
+          <div class="value" style="font-size: 14px;" id="lastUpdated">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🗺️ 省份分布统计</h2>
+      <div id="provinceStats">暂无数据</div>
+    </div>
+
+    <div class="card">
+      <h2>🌐 IP 访问记录</h2>
+      <table id="ipTable">
+        <thead>
+          <tr>
+            <th>IP 地址</th>
+            <th>省份</th>
+            <th>城市</th>
+            <th>访问次数</th>
+            <th>首次访问</th>
+            <th>最后访问</th>
+          </tr>
+        </thead>
+        <tbody id="ipTableBody">
+          <tr><td colspan="6" style="text-align: center; color: #999;">暂无数据</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>📋 操作日志</h2>
+      <div class="log-area" id="logArea"></div>
+    </div>
+  </div>
+
+  <script>
+    function addLog(message, type = 'info') {
+      const logArea = document.getElementById('logArea');
+      const time = new Date().toLocaleTimeString('zh-CN');
+      const color = type === 'success' ? '#00ff00' : type === 'error' ? '#ff4444' : '#00aaff';
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="log-time">[${time}]</span> <span style="color: ${color}">${message}</span>`;
+      logArea.appendChild(entry);
+      logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    async function fetchHealth() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        document.getElementById('ipInfo').innerHTML = `
+          <strong>您的 IP:</strong> ${data.ip}<br>
+          <strong>服务器时间:</strong> ${data.timestamp}
+        `;
+        addLog('健康检查成功', 'success');
+      } catch (err) {
+        addLog('健康检查失败: ' + err.message, 'error');
+      }
+    }
+
+    async function sendTrack() {
+      try {
+        const res = await fetch('/api/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'page_view',
+            page: window.location.pathname,
+            referrer: document.referrer,
+            userAgent: navigator.userAgent,
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          addLog(`埋点上报成功 - IP: ${data.data.ip}, 省份: ${data.data.location.province}`, 'success');
+          fetchStats();
+        }
+      } catch (err) {
+        addLog('埋点上报失败: ' + err.message, 'error');
+      }
+    }
+
+    function sendPixel() {
+      const img = new Image();
+      img.src = `/api/track?event=page_view&page=${encodeURIComponent(window.location.pathname)}`;
+      img.onload = () => {
+        addLog('像素图埋点上报成功', 'success');
+        fetchStats();
+      };
+      img.onerror = () => {
+        addLog('像素图埋点上报成功（已接收）', 'success');
+        fetchStats();
+      };
+    }
+
+    async function sendMockIps() {
+      const mockIps = [
+        '120.24.78.68',
+        '114.114.114.114',
+        '223.5.5.5',
+        '119.29.29.29',
+        '180.101.50.188',
+        '123.125.81.6',
+        '61.135.169.121',
+        '211.161.46.81',
+        '117.25.128.110',
+        '113.207.27.227',
+        '116.248.152.131',
+        '111.175.221.83',
+        '183.230.198.251',
+        '61.187.87.2',
+        '59.52.25.233',
+      ];
+
+      addLog(`开始模拟 ${mockIps.length} 个不同省份的 IP 访问...`);
+
+      for (let i = 0; i < mockIps.length; i++) {
+        try {
+          const res = await fetch('/api/track', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Forwarded-For': mockIps[i],
+            },
+            body: JSON.stringify({
+              event: 'page_view',
+              page: '/test',
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            addLog(`模拟访问成功 - ${mockIps[i]} → ${data.data.location.province}`, 'success');
+          }
+        } catch (err) {
+          addLog(`模拟访问失败 ${mockIps[i]}: ${err.message}`, 'error');
+        }
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      addLog('模拟访问完成', 'success');
+      fetchStats();
+    }
+
+    async function fetchStats() {
+      try {
+        const [summaryRes, provinceRes, ipRes] = await Promise.all([
+          fetch('/api/stats/summary'),
+          fetch('/api/stats/provinces'),
+          fetch('/api/stats/ips?limit=10'),
+        ]);
+
+        const summary = await summaryRes.json();
+        const provinces = await provinceRes.json();
+        const ips = await ipRes.json();
+
+        if (summary.success) {
+          document.getElementById('totalVisits').textContent = summary.data.totalVisits;
+          document.getElementById('uniqueIps').textContent = summary.data.uniqueIps;
+          document.getElementById('provinceCount').textContent = summary.data.provinceCount;
+          document.getElementById('lastUpdated').textContent = summary.data.lastUpdated || '-';
+        }
+
+        if (provinces.success && provinces.data.length > 0) {
+          const maxCount = Math.max(...provinces.data.map(p => p.count));
+          const html = provinces.data.map(p => `
+            <div class="province-row" style="margin-bottom: 8px;">
+              <span class="province-name">${p.province}</span>
+              <span class="province-count">${p.count} 次</span>
+              <span class="province-percent">${p.percentage}</span>
+              <div style="flex: 1;">
+                <div class="progress-bar">
+                  <div class="progress-fill" style="width: ${(p.count / maxCount) * 100}%"></div>
+                </div>
+              </div>
+            </div>
+          `).join('');
+          document.getElementById('provinceStats').innerHTML = html;
+        } else {
+          document.getElementById('provinceStats').innerHTML = '暂无数据';
+        }
+
+        if (ips.success && ips.data.length > 0) {
+          const html = ips.data.map(ip => `
+            <tr>
+              <td><code>${ip.ip}</code></td>
+              <td>${ip.province}</td>
+              <td>${ip.city}</td>
+              <td>${ip.count}</td>
+              <td>${ip.firstVisit}</td>
+              <td>${ip.lastVisit}</td>
+            </tr>
+          `).join('');
+          document.getElementById('ipTableBody').innerHTML = html;
+        }
+      } catch (err) {
+        addLog('获取统计数据失败: ' + err.message, 'error');
+      }
+    }
+
+    async function clearStats() {
+      if (!confirm('确定要清空所有统计数据吗？')) return;
+      try {
+        const res = await fetch('/api/stats/clear', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          addLog('统计数据已清空', 'success');
+          fetchStats();
+        }
+      } catch (err) {
+        addLog('清空失败: ' + err.message, 'error');
+      }
+    }
+
+    setInterval(fetchStats, 3000);
+    fetchHealth();
+    fetchStats();
+    addLog('页面加载完成，自动刷新已启动 (3秒)');
+  </script>
+</body>
+</html>

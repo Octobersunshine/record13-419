@@ -1,0 +1,26 @@
+{
+  "name": "419",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Octobersunshine/record13-419.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Octobersunshine/record13-419/issues"
+  },
+  "homepage": "https://github.com/Octobersunshine/record13-419#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "ip2region": "^2.3.0"
+  }
+}
