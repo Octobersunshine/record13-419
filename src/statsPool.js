@@ -4,46 +4,151 @@ class StatsPool {
     this.ipVisits = new Map();
     this.totalVisits = 0;
     this.lastUpdated = null;
+
+    this._pendingBuffer = [];
+    this._isFlushing = false;
+    this._flushScheduled = false;
+    this._flushCallbacks = [];
   }
 
   recordVisit(ip, location) {
-    const province = location.province || '未知';
-    const city = location.city || '未知';
-    const now = Date.now();
+    return new Promise((resolve) => {
+      this._pendingBuffer.push({ ip, location, timestamp: Date.now() });
+      this._flushCallbacks.push(resolve);
+      this._scheduleFlush();
+    });
+  }
 
-    if (!this.provinceStats.has(province)) {
-      this.provinceStats.set(province, {
-        count: 0,
-        cities: new Map(),
-        firstVisit: now,
-        lastVisit: now,
-      });
+  recordVisitSync(ip, location) {
+    this._pendingBuffer.push({ ip, location, timestamp: Date.now() });
+    this._scheduleFlush();
+  }
+
+  _scheduleFlush() {
+    if (this._flushScheduled) return;
+    this._flushScheduled = true;
+
+    process.nextTick(() => {
+      this._flush();
+    });
+  }
+
+  _flush() {
+    if (this._isFlushing) {
+      this._flushScheduled = false;
+      return;
     }
 
-    const provinceData = this.provinceStats.get(province);
-    provinceData.count++;
-    provinceData.lastVisit = now;
-
-    if (!provinceData.cities.has(city)) {
-      provinceData.cities.set(city, 0);
+    if (this._pendingBuffer.length === 0) {
+      this._flushScheduled = false;
+      return;
     }
-    provinceData.cities.set(city, provinceData.cities.get(city) + 1);
 
-    if (!this.ipVisits.has(ip)) {
-      this.ipVisits.set(ip, {
-        count: 0,
-        province,
-        city,
-        firstVisit: now,
-        lastVisit: now,
-      });
+    this._isFlushing = true;
+
+    const batch = this._pendingBuffer;
+    const callbacks = this._flushCallbacks;
+    this._pendingBuffer = [];
+    this._flushCallbacks = [];
+    this._flushScheduled = false;
+
+    const provinceDeltas = new Map();
+    const cityDeltas = new Map();
+    const ipDeltas = new Map();
+    let totalDelta = 0;
+    let latestTimestamp = 0;
+
+    for (const record of batch) {
+      const { ip, location, timestamp } = record;
+      const province = location.province || '未知';
+      const city = location.city || '未知';
+
+      if (!provinceDeltas.has(province)) {
+        provinceDeltas.set(province, { count: 0, cities: new Map(), firstVisit: timestamp, lastVisit: timestamp });
+      }
+      const provinceDelta = provinceDeltas.get(province);
+      provinceDelta.count++;
+      if (timestamp < provinceDelta.firstVisit) provinceDelta.firstVisit = timestamp;
+      if (timestamp > provinceDelta.lastVisit) provinceDelta.lastVisit = timestamp;
+
+      if (!provinceDelta.cities.has(city)) {
+        provinceDelta.cities.set(city, 0);
+      }
+      provinceDelta.cities.set(city, provinceDelta.cities.get(city) + 1);
+
+      if (!ipDeltas.has(ip)) {
+        ipDeltas.set(ip, { count: 0, province, city, firstVisit: timestamp, lastVisit: timestamp });
+      }
+      const ipDelta = ipDeltas.get(ip);
+      ipDelta.count++;
+      if (timestamp < ipDelta.firstVisit) ipDelta.firstVisit = timestamp;
+      if (timestamp > ipDelta.lastVisit) ipDelta.lastVisit = timestamp;
+
+      totalDelta++;
+      if (timestamp > latestTimestamp) latestTimestamp = timestamp;
     }
-    const ipData = this.ipVisits.get(ip);
-    ipData.count++;
-    ipData.lastVisit = now;
 
-    this.totalVisits++;
-    this.lastUpdated = now;
+    for (const [province, delta] of provinceDeltas) {
+      if (!this.provinceStats.has(province)) {
+        this.provinceStats.set(province, {
+          count: 0,
+          cities: new Map(),
+          firstVisit: delta.firstVisit,
+          lastVisit: delta.lastVisit,
+        });
+      }
+      const stats = this.provinceStats.get(province);
+      stats.count += delta.count;
+      if (delta.firstVisit < stats.firstVisit) stats.firstVisit = delta.firstVisit;
+      if (delta.lastVisit > stats.lastVisit) stats.lastVisit = delta.lastVisit;
+
+      for (const [city, cityCount] of delta.cities) {
+        if (!stats.cities.has(city)) {
+          stats.cities.set(city, 0);
+        }
+        stats.cities.set(city, stats.cities.get(city) + cityCount);
+      }
+    }
+
+    for (const [ip, delta] of ipDeltas) {
+      if (!this.ipVisits.has(ip)) {
+        this.ipVisits.set(ip, {
+          count: 0,
+          province: delta.province,
+          city: delta.city,
+          firstVisit: delta.firstVisit,
+          lastVisit: delta.lastVisit,
+        });
+      }
+      const stats = this.ipVisits.get(ip);
+      stats.count += delta.count;
+      if (delta.firstVisit < stats.firstVisit) stats.firstVisit = delta.firstVisit;
+      if (delta.lastVisit > stats.lastVisit) stats.lastVisit = delta.lastVisit;
+    }
+
+    this.totalVisits += totalDelta;
+    this.lastUpdated = latestTimestamp;
+
+    this._isFlushing = false;
+
+    for (const cb of callbacks) {
+      cb();
+    }
+
+    if (this._pendingBuffer.length > 0) {
+      this._scheduleFlush();
+    }
+  }
+
+  flush() {
+    return new Promise((resolve) => {
+      if (this._pendingBuffer.length === 0 && !this._isFlushing) {
+        resolve();
+        return;
+      }
+      this._flushCallbacks.push(resolve);
+      this._scheduleFlush();
+    });
   }
 
   getProvinceStats() {
@@ -94,6 +199,12 @@ class StatsPool {
     this.ipVisits.clear();
     this.totalVisits = 0;
     this.lastUpdated = null;
+    this._pendingBuffer = [];
+    this._flushCallbacks = [];
+  }
+
+  getBufferSize() {
+    return this._pendingBuffer.length;
   }
 }
 

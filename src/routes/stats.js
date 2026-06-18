@@ -2,14 +2,16 @@ const express = require('express');
 const router = express.Router();
 const statsPool = require('../statsPool');
 
-router.get('/summary', (req, res) => {
+router.get('/summary', async (req, res) => {
+  await statsPool.flush();
   res.json({
     success: true,
     data: statsPool.getSummary(),
   });
 });
 
-router.get('/provinces', (req, res) => {
+router.get('/provinces', async (req, res) => {
+  await statsPool.flush();
   const { limit } = req.query;
   let data;
   if (limit) {
@@ -23,7 +25,8 @@ router.get('/provinces', (req, res) => {
   });
 });
 
-router.get('/ips', (req, res) => {
+router.get('/ips', async (req, res) => {
+  await statsPool.flush();
   const { limit } = req.query;
   let data = statsPool.getIpStats();
   if (limit) {

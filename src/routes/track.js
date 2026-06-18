@@ -11,7 +11,7 @@ router.post('/track', async (req, res) => {
     const location = parseIp(ip);
     const province = location.province;
 
-    statsPool.recordVisit(ip, location);
+    statsPool.recordVisitSync(ip, location);
 
     res.json({
       success: true,
@@ -39,7 +39,7 @@ router.get('/track', (req, res) => {
     const location = parseIp(ip);
     const province = location.province;
 
-    statsPool.recordVisit(ip, location);
+    statsPool.recordVisitSync(ip, location);
 
     const img = Buffer.from(
       'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
